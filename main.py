@@ -76,7 +76,8 @@ def main(args):
 
     running_loss = 0.
     running_time = time.time()
-    best_vloss = 1_000_000
+    best_vloss, best_chkpt = 1_000_000, 0
+    start = time.time()
     for step in range(1,TOTAL_STEP_COUNT+1):
         opt.zero_grad()
         
@@ -116,8 +117,11 @@ def main(args):
             if running_vloss <= best_vloss:
                 logging.info("Saving checkpoint.")
                 best_vloss = running_vloss
+                best_chkpt = step
                 utils.save_checkpoint(lm, opt, step, f"./data/best-checkpoint.pt")
     
+    total_running_time = time.time() - start
+    logging.info("Final validation loss: %.5f, best chkp: %i, total running time %.1fs", best_vloss, best_chkpt, total_running_time)
     return 0
 
 if __name__ == '__main__':
@@ -135,7 +139,7 @@ if __name__ == '__main__':
                         help='Size of the vocabulary.')
     parser.add_argument('--context_length', type=int, default=256,
                         help='Maximum context length for the model.')
-    parser.add_argument('--total_tokens_processed', type=int, default=327_680_000,
+    parser.add_argument('--total_tokens_processed', type=int, default=40_960_000,
                         help='maximum number of tokens processed during the training run.')
     parser.add_argument('--batch_size', type=int, default=32,
                         help='Batch size for training.')
