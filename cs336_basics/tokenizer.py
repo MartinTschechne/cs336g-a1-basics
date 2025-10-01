@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 from collections.abc import Iterable
 
@@ -13,7 +14,7 @@ import multiprocessing
 import time
 from tqdm import tqdm
 
-from cs336_basics import token_utils, pretokenization_example
+from cs336_basics import token_utils, pretokenization_example, utils
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
@@ -44,6 +45,7 @@ class BPETokenizer:
         self.token_to_int = None
         self.merges = merges
         self.special_tokens = sorted(special_tokens,key=len,reverse=True) if special_tokens else []
+        self.num_workers = os.process_cpu_count()
 
     @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None) -> "BPETokenizer":
@@ -77,7 +79,7 @@ class BPETokenizer:
         pre_tokenized_corpus = self._clean_input(text)
 
         corpus_enc = []
-        for pt_doc in pre_tokenized_corpus:
+        for pt_doc in tqdm(pre_tokenized_corpus,total=len(pre_tokenized_corpus)):
             if not pt_doc:
                 continue
             doc_enc = []
@@ -106,7 +108,7 @@ class BPETokenizer:
         text = b""
         if ids and isinstance(ids[0],list):
             ids = chain.from_iterable(ids)
-        for id_ in ids:
+        for id_ in tqdm(ids,total=len(ids)):
             text += self.vocab[id_]
         return text.decode(errors='replace')
     
@@ -116,12 +118,13 @@ class BPETokenizer:
         else:
             splitted = [file_content]
         return [re.findall(PAT, spl) if spl not in self.special_tokens else [spl] for spl in splitted]
-    
-    def _chunk_clean_count_parallel(self, input_path, num_workers: int=4):
+   
+    @utils.stopwatch
+    def _chunk_clean_count_parallel(self, input_path):
         with open(input_path, "rb") as f:
-            boundaries = pretokenization_example.find_chunk_boundaries(f, num_workers, b"<|endoftext|>")
+            boundaries = pretokenization_example.find_chunk_boundaries(f, self.num_workers, b"<|endoftext|>")
         items = [(start, end, input_path) for start, end in zip(boundaries[:-1],boundaries[1:])]
-        with multiprocessing.Pool(processes=num_workers) as pool:
+        with multiprocessing.Pool(processes=self.num_workers) as pool:
             res = pool.starmap(chunk_clean_count_global, items)
         for r in res[1:]:
             res[0] += r
@@ -134,9 +137,9 @@ class BPETokenizer:
                 byte_pair_counts[byte_pair] += freq
         return byte_pair_counts
     
-    def _get_byte_pair_counts_parallel(self, freq_table: dict, num_workers: int = 4):
-        items = batched(freq_table.items(),len(freq_table)//max(1,num_workers-1))
-        with multiprocessing.Pool(processes=num_workers) as pool:
+    def _get_byte_pair_counts_parallel(self, freq_table: dict):
+        items = batched(freq_table.items(),len(freq_table)//max(1,self.um_workers-1))
+        with multiprocessing.Pool(processes=self.num_workers) as pool:
             res = pool.map(get_byte_pair_counts_global, items)
         byte_pair_counts = Counter()
         for r in res:

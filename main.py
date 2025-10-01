@@ -50,7 +50,7 @@ def main(args):
         rope_theta=args.theta
     )
     print("No. params: ", sum(param.numel() for param in lm.parameters() if param.requires_grad))
-    lm.compile()
+    #lm.compile()
     lm.to(DEVICE)
 
     opt = optimizer.AdamW(params=lm.parameters(),lr=args.learning_rate)

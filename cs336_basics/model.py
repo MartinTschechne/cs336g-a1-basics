@@ -79,14 +79,14 @@ def scaled_dot_product_attention(
     d_k_inv = 1./ np.sqrt(K.shape[-1])
     qk = torch.einsum("...qd,...kd->...qk",Q,K) * d_k_inv
     if mask is not None:
-        qk[...,~mask] = -torch.inf
+        qk[...,~mask] = -torch.finfo(torch.float32).max
     sdpa = torch.einsum("...qk,...kd->...qd",nn_utils.softmax(qk,-1),V.to(torch.float64))
 
     return sdpa.to(torch.float32)
 
 
 class MultiHeadSelfAttention(torch.nn.Module):
-    def __init__(self, num_heads: int, d_model: int, theta: Optional[float] = None, max_seq_len: Optional[int] = None):
+    def __init__(self, num_heads: int, d_model: int, theta: Optional[float] = None, max_seq_len: Optional[int] = None, device: str = 'cuda'):
         super(MultiHeadSelfAttention, self).__init__()
         self.num_heads = num_heads
         self.d_model = d_model
@@ -97,7 +97,7 @@ class MultiHeadSelfAttention(torch.nn.Module):
         self.linear_o = Linear(self.d_v * self.num_heads, self.d_model)
         self.rope = None
         if theta and max_seq_len:
-            self.rope = RoPE(theta, self.d_k, max_seq_len)
+            self.rope = RoPE(theta, self.d_k, max_seq_len, device)
     
     def forward(self, x: Float[Tensor, "... seq_len d_model"], token_positions: Optional[Int[Tensor, " ... sequence_length"]] = None):
         seq_len = x.shape[-2]
@@ -130,15 +130,16 @@ class RoPE(torch.nn.Module):
             for i in range(d_k//2):
                 i_ = 2*i
                 R[m,i_:i_+2,i_:i_+2] = get_rot_mat(m,i)
-        self.R = torch.DoubleTensor(R,device=device)
+        self.R = torch.DoubleTensor(R).to(device)
         self.register_buffer('rope_matrix', self.R, persistent=False)
+        self.device = device
     
     def forward(self, x: Float[Tensor, " ... sequence_length d_k"],
                       token_positions: Optional[Int[Tensor, " ... sequence_length"]] = None
     )-> Float[Tensor, " ... sequence_length d_k"]:
         in_dtype = x.dtype
         if token_positions is None:
-            token_positions = torch.arange(x.shape[-2])
+            token_positions = torch.arange(x.shape[-2],device=self.device)
         return torch.einsum("...sij,...bsj->...bsi",self.R[token_positions],x.to(torch.float64)).to(in_dtype)
 
 # class RoPE(torch.nn.Module):
