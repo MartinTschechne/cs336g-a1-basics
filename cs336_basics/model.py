@@ -86,7 +86,7 @@ def scaled_dot_product_attention(
 
 
 class MultiHeadSelfAttention(torch.nn.Module):
-    def __init__(self, num_heads: int, d_model: int, theta: Optional[float] = None, max_seq_len: Optional[int] = None, device: str = 'cuda'):
+    def __init__(self, num_heads: int, d_model: int, theta: Optional[float] = None, max_seq_len: Optional[int] = None, device: str = 'cpu'):
         super(MultiHeadSelfAttention, self).__init__()
         self.num_heads = num_heads
         self.d_model = d_model
