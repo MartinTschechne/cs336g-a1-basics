@@ -8,7 +8,6 @@ logging.basicConfig(level=logging.INFO)
 
 from cs336_basics import utils, tokenizer, data, token_utils
 
-# import cProfile
 
 SPECIAL_TOKENS = ["<|endoftext|>"]
 
@@ -58,6 +57,3 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     main(args)
-    # from functools import partial
-    # profiled_main = partial(main, args)
-    # cProfile.run('profiled_main()')

@@ -132,10 +132,12 @@ class BPETokenizer:
 
     def _get_byte_pair_counts(self, freq_table: dict[tuple[str],int]) -> dict[tuple[str],int]:
         byte_pair_counts = defaultdict(int)
+        byte_pair_words = defaultdict(list)
         for pt_word, freq in freq_table.items():
-            for byte_pair in pairwise(pt_word):
+            for i, byte_pair in enumerate(pairwise(pt_word)):
                 byte_pair_counts[byte_pair] += freq
-        return byte_pair_counts
+                byte_pair_words[byte_pair].append((pt_word, i))
+        return byte_pair_counts, byte_pair_words
     
     def _get_byte_pair_counts_parallel(self, freq_table: dict):
         items = batched(freq_table.items(),len(freq_table)//max(1,self.um_workers-1))
@@ -145,28 +147,35 @@ class BPETokenizer:
         for r in res:
             byte_pair_counts += r
         return byte_pair_counts
-    
-    def _update_freq_table(self, freq_table: dict, max_pair: tuple):
-        # update freq_table
-        old_new_cnt = []
-        for pt_word, freq in freq_table.items():
-            if max_pair[0] in pairwise(pt_word):
-                old = pt_word
-                cnt = freq
-                new = []
-                j = 0
-                while j < len(pt_word):
-                    if max_pair[0] == pt_word[j:j+2]:
-                        new.append(max_pair[0][0]+max_pair[0][1])
-                        j += 2
-                    else:
-                        new.append(pt_word[j])
-                        j += 1
-                old_new_cnt.append((old, new, cnt))
-        for old, new, cnt in old_new_cnt:
-            del freq_table[old]
-            freq_table[tuple(new)] = cnt
-        return freq_table
+
+    def _update_byte_pairs(self, max_pair: tuple) -> list(tuple(bytes, int)):
+        new_counts = defaultdict(int)
+        new_byte = tuple([max_pair[0]+max_pair[1]],)
+        for word, pos in self.byte_pair_words[max_pair]:
+            if not word in self.freq_table:
+                continue
+            new_word = word[:pos] + new_byte + word[pos+2:]
+            cnt = self.freq_table[word]
+            self.freq_table[new_word] = cnt
+            del self.freq_table[word]
+            left, right = new_word[pos-1:pos+1], new_word[pos:pos+2]
+            for i, pair in enumerate(pairwise(new_word)):
+                if pair == left or pair == right:
+                    continue
+                self.byte_pair_words[pair].append((new_word,i))
+            if len(left) == 2:
+                new_counts[left] += cnt
+                self.byte_pair_counts[left] += cnt
+                self.byte_pair_words[left].append((new_word, pos-1))
+                self.byte_pair_counts[(word[pos-1],word[pos])] -= cnt
+            if len(right) == 2:
+                new_counts[right] += cnt
+                self.byte_pair_counts[right] += cnt
+                self.byte_pair_words[right].append((new_word, pos))
+                self.byte_pair_counts[(word[pos+1],word[pos+2])] -= cnt
+        del self.byte_pair_words[max_pair]
+        return new_counts
+        
     
     def train_tokenizer(self, input_path, vocab_size, special_tokens = [], parallel: bool = True) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         self.vocab = {i: bytes([i]) for i in range(256)}
@@ -178,28 +187,29 @@ class BPETokenizer:
         self.special_tokens = special_tokens
 
         if not parallel:
-            # start = time.time()
+            start = time.time()
             with open(input_path, 'r') as f:
                 file_content = f.read()
             
             pre_tokenized_corpus = self._clean_input(file_content)
-            freq_table = Counter(tuple(pt_word.encode()[i:i+1] for i in range(len(pt_word.encode())))
+            self.freq_table = Counter(tuple(pt_word.encode()[i:i+1] for i in range(len(pt_word.encode())))
                 if pt_word not in self.special_tokens else tuple([pt_word.encode()])
                 for pt_doc in pre_tokenized_corpus for pt_word in pt_doc
             )
-            # print(f"Sequential: {time.time() - start :.3f} s")
+            print(f"Sequential: {time.time() - start :.3f} s")
         else:
-            # start = time.time()
-            freq_table = self._chunk_clean_count_parallel(input_path)
-            # print(f"Parallel: {time.time() - start :.3f} s")
+            start = time.time()
+            self.freq_table = self._chunk_clean_count_parallel(input_path)
+            print(f"Parallel: {time.time() - start :.3f} s")
 
+        self.byte_pair_counts, self.byte_pair_words = self._get_byte_pair_counts(self.freq_table)
         with tqdm(total=vocab_size-len(self.vocab), desc=f"It {self.i}/{vocab_size}") as pbar:
             while self.i < vocab_size:
-                byte_pair_counts = self._get_byte_pair_counts(freq_table)
-                max_pair = max(byte_pair_counts.items(), key=lambda kv: (kv[1],kv[0]))
-                self.merges.append((max_pair[0][0],max_pair[0][1]))
-                self.vocab[self.i] = max_pair[0][0] + max_pair[0][1]
-                freq_table = self._update_freq_table(freq_table, max_pair)
+                max_pair, _ = max(self.byte_pair_counts.items(), key=lambda kv: (kv[1],kv[0]))
+                self.merges.append((max_pair[0],max_pair[1]))
+                self.vocab[self.i] = max_pair[0] + max_pair[1]
+                new_byte_pair_counts = self._update_byte_pairs(max_pair)
+                del self.byte_pair_counts[max_pair]
                 pbar.update(1)
                 self.i += 1
         return self.vocab, self.merges
