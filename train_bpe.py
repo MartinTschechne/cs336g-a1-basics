@@ -47,9 +47,10 @@ if __name__ == '__main__':
 
     parser.add_argument('--vocab_size', type=int, default=10_000,
                         help='Size of the vocabulary.')
-    parser.add_argument('--learning_task', type=data.LearningTask,
-                        choices=list(data.LearningTask), default=data.LearningTask.TINY_STORIES_V2,
-                        help='Which task to choose.')
+    parser.add_argument(
+    "--learning_task", type=data.parse_enum(data.LearningTask), choices=list(data.LearningTask),
+    default=data.LearningTask.TINY_STORIES_V2, help="Which task to choose."
+)
     parser.add_argument('--debug', action='store_true',
                         help='Debugging flag.')
 

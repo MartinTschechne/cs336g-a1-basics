@@ -96,7 +96,7 @@ class BPETokenizer:
 
     def _encode_pre_tokenized_corpus(self, pre_tokenized_corpus):
         corpus_enc = []
-        for pt_doc in tqdm(pre_tokenized_corpus,total=sum(len(ptc) for ptc in pre_tokenized_corpus)):
+        for pt_doc in tqdm(pre_tokenized_corpus,total=sum(1 for ptc in pre_tokenized_corpus)):
             if not pt_doc:
                 continue
             doc_enc = []

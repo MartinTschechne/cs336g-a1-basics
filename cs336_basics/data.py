@@ -4,11 +4,20 @@ import pathlib
 import random
 from enum import Enum
 from itertools import batched
+import argparse
 
 import numpy as np
 import numpy.typing as npt
 import torch
 
+def parse_enum(enum_cls):
+    """Return a function that parses a string into the given Enum."""
+    def parser_fn(value: str):
+        try:
+            return enum_cls(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid choice: {value}. Choose from {[e.value for e in enum_cls]}")
+    return parser_fn
 
 class LearningTask(Enum):
     TINY_STORIES_V2 = "TinyStoriesV2-GPT4"
