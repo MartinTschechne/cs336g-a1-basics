@@ -38,6 +38,14 @@ def chunk_clean_count_global(start, end, input_path) -> Counter:
         )
         return freq_table
 
+def chunk_clean_global(start, end, input_path) -> list[str]:
+        with open(input_path, "rb") as f:
+            f.seek(start)
+            chunk = f.read(end - start).decode("utf-8", errors="ignore")
+        splitted = re.split('('+'|'.join([re.escape(st) for st in ["<|endoftext|>"]])+')', chunk)
+        pre_tokenized_corpus = [re.findall(PAT, spl) if spl not in ["<|endoftext|>"] else [spl] for spl in splitted]
+        return pre_tokenized_corpus
+
 
 class BPETokenizer:
     def __init__(self, vocab = None, merges = None, special_tokens: Optional[list[str]]=None):
@@ -71,15 +79,24 @@ class BPETokenizer:
         if pre_token_enc in self.token_to_int:
             return [self.token_to_int[pre_token_enc]]
         return [self.token_to_int[bytes([pte])] for pte in pre_token_enc]
-
-    def encode(self, text: str) -> list[int]:
-        if not text:
-            return []
+    
+    def encode_from_file(self, input_path, parallel: bool = True):
+        if not parallel:
+            with open(input_path, "rb") as f:
+                text = f.read()
+            return self.encode(text)
+        
         self.token_to_int = {v:k for k, v in self.vocab.items()}
-        pre_tokenized_corpus = self._clean_input(text)
+        with open(input_path, "rb") as f:
+            boundaries = pretokenization_example.find_chunk_boundaries(f, self.num_workers, b"<|endoftext|>")
+        items = [(start, end, input_path) for start, end in zip(boundaries[:-1],boundaries[1:])]
+        with multiprocessing.Pool(processes=self.num_workers) as pool:
+            res = pool.starmap(chunk_clean_global, items)
+        return self._encode_pre_tokenized_corpus(chain.from_iterable(res))
 
+    def _encode_pre_tokenized_corpus(self, pre_tokenized_corpus):
         corpus_enc = []
-        for pt_doc in tqdm(pre_tokenized_corpus,total=len(pre_tokenized_corpus)):
+        for pt_doc in tqdm(pre_tokenized_corpus,total=sum(len(ptc) for ptc in pre_tokenized_corpus)):
             if not pt_doc:
                 continue
             doc_enc = []
@@ -98,7 +115,14 @@ class BPETokenizer:
                 doc_enc += [self.token_to_int[pte] for pte in pre_token_enc]
             corpus_enc += doc_enc
         return corpus_enc
-    
+
+    def encode(self, text: str) -> list[int]:
+        if not text:
+            return []
+        self.token_to_int = {v:k for k, v in self.vocab.items()}
+        pre_tokenized_corpus = self._clean_input(text)
+        return self._encode_pre_tokenized_corpus(pre_tokenized_corpus)
+
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[str]:
         for it in iterable:
             for tokens in  self.encode(it):

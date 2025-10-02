@@ -20,8 +20,8 @@ def train_tokenizer(tokenizer, input_path, args):
     )
 
 @utils.stopwatch
-def encode(tokenizer, text):
-    return tokenizer.encode(text)
+def encode(tokenizer, input_path):
+    return tokenizer.encode_from_file(input_path)
 
 def main(args):
     print("Parsed arguments:")
@@ -38,9 +38,7 @@ def main(args):
         vocab, merges, vocab_path=vocab_path, merges_path=merges_path
     )
 
-    with open(input_path,'r') as f:
-        text = f.read()
-    _ = encode(bpe_tokenizer, text)
+    _ = encode(bpe_tokenizer, input_path)
 
     return 0
 
